@@ -9,7 +9,7 @@ CSR=example.csr
 KEY=example.key
 CERT=example.crt
 
-PHPINFOPATH=/usr/local/lsws/lsphp73/etc/php/7.3/litespeed/php.ini
+PHPINFOPATH=/usr/local/lsws/lsphp74/etc/php/7.4/litespeed/php.ini
 
 sed_escape_lhs() {
     echo "$@" | sed -e 's/[]\/$*.^|[]/\\&/g'
@@ -291,7 +291,7 @@ activate_plugin('litespeed-cache/litespeed-cache.php', '', false, false);
 
 END
     ls -all $SERVER_ROOT/fcgi-bin/
-    $SERVER_ROOT/lsphp73/bin/php7.3 $WORDPRESSPATH/activate_cache.php
+    $SERVER_ROOT/lsphp74/bin/php7.4 $WORDPRESSPATH/activate_cache.php
     rm $WORDPRESSPATH/activate_cache.php
 }
 

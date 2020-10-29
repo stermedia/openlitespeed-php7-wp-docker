@@ -1,1 +1,1 @@
-# Openlitespeed + PHP73 + Wordpress
+# Openlitespeed + PHP7 + Wordpress

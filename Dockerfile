@@ -1,38 +1,66 @@
-FROM ubuntu:16.04
+FROM ubuntu:20.04
+
+ARG OLS_VERSION=1.6.16-1+focal
+ARG PHP_VERSION=7.4
+ARG LSPHP_VERSION=lsphp74
+ARG WORDPRESS_VERSION=5.5.1
+ARG WORDPRESS_SHA1=d3316a4ffff2a12cf92fde8bfdd1ff8691e41931
+ARG LSCACHE_PLUGIN_VERSION=3.5.2
 
 WORKDIR /usr/local/lsws/
 
-RUN apt-get update && apt-get upgrade -y && apt-get install -y wget
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
+    wget \
+    unzip
 
-RUN wget -O /etc/apt/trusted.gpg.d/lst_debian_repo.gpg http://rpms.litespeedtech.com/debian/lst_debian_repo.gpg
-RUN wget -O /etc/apt/trusted.gpg.d/lst_repo.gpg http://rpms.litespeedtech.com/debian/lst_repo.gpg
+# Install openlistespeed
+RUN wget -O - http://rpms.litespeedtech.com/debian/enable_lst_debian_repo.sh | bash
+RUN apt-get update && apt-get install -y openlitespeed=$OLS_VERSION
 
-RUN echo "deb http://rpms.litespeedtech.com/debian/ xenial main" > /etc/apt/sources.list.d/lst_debian_repo.list
-RUN echo "deb http://rpms.litespeedtech.com/edge/debian/ xenial main" >> /etc/apt/sources.list.d/lst_debian_repo.list
-RUN apt-get update
-RUN apt-get install -y openlitespeed
-RUN apt-get install -y --no-install-recommends lsphp73 lsphp73-common lsphp73-mysql lsphp73-json lsphp73-opcache lsphp73-imap lsphp73-dev lsphp73-curl lsphp73-dbg
-RUN ln -s /usr/local/lsws/lsphp73/bin/php7.3 /usr/bin/php
+# Install PHP
+RUN apt-get install -y --no-install-recommends \
+    $LSPHP_VERSION \
+    $LSPHP_VERSION-common \
+    $LSPHP_VERSION-mysql \
+    $LSPHP_VERSION-json \
+    $LSPHP_VERSION-opcache \
+    $LSPHP_VERSION-imap \
+    $LSPHP_VERSION-dev \
+    $LSPHP_VERSION-curl \
+    $LSPHP_VERSION-dbg
+RUN ln -s /usr/local/lsws/$LSPHP_VERSION/bin/php$PHP_VERSION /usr/bin/php
 
-# Installing wordpress
-RUN wget --no-check-certificate http://wordpress.org/latest.tar.gz
-RUN tar -xzvf latest.tar.gz  >/dev/null 2>&1
-RUN rm latest.tar.gz
-RUN wget -q -r --level=0 -nH --cut-dirs=2 --no-parent https://plugins.svn.wordpress.org/litespeed-cache/trunk/ --reject html -P ./wordpress/wp-content/plugins/litespeed-cache/
+# Install wordpress
+RUN wget --no-check-certificate -O wordpress.tar.gz https://wordpress.org/wordpress-${WORDPRESS_VERSION}.tar.gz
+RUN echo "$WORDPRESS_SHA1 *wordpress.tar.gz" | sha1sum -c -;
+RUN tar -xzvf wordpress.tar.gz  >/dev/null 2>&1 && rm wordpress.tar.gz
+
+# Install litespeed cache plugin
+RUN wget -O litespeed-cache.zip https://downloads.wordpress.org/plugin/litespeed-cache.${LSCACHE_PLUGIN_VERSION}.zip \
+    && unzip litespeed-cache.zip -d ./wordpress/wp-content/plugins/ \
+    && rm litespeed-cache.zip
+#RUN wget -q -r --level=0 -nH --cut-dirs=2 --no-parent https://plugins.svn.wordpress.org/litespeed-cache/trunk/ --reject html -P ./wordpress/wp-content/plugins/litespeed-cache/
 RUN chown -R --reference=./autoupdate ./wordpress
 
-# 
-RUN rm -rf /usr/local/lsws/conf/httpd_config.conf /usr/local/lsws/lsphp73/etc/php/7.3/litespeed/php.ini /var/lib/apt/lists/* ./enable_lst_debain_repo.sh /usr/local/lsws/conf/vhosts/Example && apt-get remove --purge -y wget
+RUN rm -rf \
+    /usr/local/lsws/conf/httpd_config.conf \
+    /usr/local/lsws/$LSPHP_VERSION/etc/php/$PHP_VERSION/litespeed/php.ini \
+    /var/lib/apt/lists/* \
+    ./enable_lst_debain_repo.sh \
+    /usr/local/lsws/conf/vhosts/Example \
+    && apt-get remove --purge -y \
+    wget \
+    unzip
 
 RUN touch /usr/local/lsws/logs/error.log \
     && touch /usr/local/lsws/logs/access.log \
     # && ln -sf /dev/stdout /usr/local/lsws/logs/access.log \
     # && ln -sf /dev/stderr /usr/local/lsws/logs/error.log \
-    && ln -sf /usr/local/lsws/lsphp73/bin/lsphp /usr/local/lsws/fcgi-bin/lsphp \
-    && ln -sf /usr/local/lsws/lsphp73/bin/lsphp /usr/local/lsws/fcgi-bin/lsphp7
+    && ln -sf /usr/local/lsws/lsphp74/bin/lsphp /usr/local/lsws/fcgi-bin/lsphp \
+    && ln -sf /usr/local/lsws/lsphp74/bin/lsphp /usr/local/lsws/fcgi-bin/lsphp7
 
 COPY ./httpd_config.conf /usr/local/lsws/conf/
-COPY ./php.ini /usr/local/lsws/lsphp73/etc/php/7.3/litespeed/
+COPY ./php.ini /usr/local/lsws/$LSPHP_VERSION/etc/php/$PHP_VERSION/litespeed/
 COPY ./entrypoint.sh /
 
 RUN chmod +x /entrypoint.sh
