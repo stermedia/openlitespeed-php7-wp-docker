@@ -64,6 +64,7 @@ function setup_wordpress
     else
         if [ -e "$WORDPRESSPATH/wp-config-sample.php" ] ; then
             cp "$WORDPRESSPATH/wp-config-sample.php" "$WORDPRESSPATH/wp-config.php"
+            
             # sed -e "s/database_name_here/$DB_NAME/" -e "s/username_here/$DB_USERNAME/" -e "s/password_here/$DB_PASSWORD/" "$WORDPRESSPATH/wp-config-sample.php" > "$WORDPRESSPATH/wp-config.php"
             if [ -e "$WORDPRESSPATH/wp-config.php" ] ; then
                 chown  -R --reference="$WORDPRESSPATH/wp-config-sample.php"   "$WORDPRESSPATH/wp-config.php"
@@ -88,14 +89,14 @@ function setup_wordpress
     )
 
     for unique in "${UNIQUES[@]}"; do
-        uniqVar="\$WORDPRESS_$unique"
-        # file_env "$uniqVar"
-        if [ "${!uniqVar}" ]; then
-            set_config "$unique" "${!uniqVar}"
+        UNIQUE_VARIABLE="WORDPRESS_$unique"
+
+        if [[ ! -z "${!UNIQUE_VARIABLE}" ]]; then
+            set_config "$unique" "${!UNIQUE_VARIABLE}"
         else
             # if not specified, let's generate a random value
             # define( 'DB_NAME', 'database_name_here' );
-			    	currentVal="$(sed -rn "s/define\(\s*['\"]$unique['\"]\s*,\s*['\"](.*)['\"]\s*\);.*$/\1/p" $WORDPRESSPATH/wp-config.php)"
+            currentVal="$(sed -rn "s/define\(\s*['\"]$unique['\"]\s*,\s*['\"](.*)['\"]\s*\);.*$/\1/p" $WORDPRESSPATH/wp-config.php)"
 
             if [ "$currentVal" = "put your unique phrase here" ]; then
                 set_config "$unique" "$(head -c1m /dev/urandom | sha1sum | cut -d' ' -f1)"
@@ -112,18 +113,31 @@ function setup_wordpress
 
     # sed -e '5,10d;12d' "$WORDPRESSPATH/wp-config.php"
 
+    if ! grep -c -q "wp-config-header.php" ${WORDPRESSPATH}/wp-config.php ; then
+        sed -i "2s/^/require_once(__DIR__.'\/wp-config-header.php');\n/" $WORDPRESSPATH/wp-config.php 
+    fi
+
+    cat > $WORDPRESSPATH/wp-config-header.php << EOF
+<?php
+if ( isset( \$_SERVER['$REMOTE_ADDR'] ) ) {
+	\$http_x_headers = explode( ',', \$_SERVER['$REMOTE_ADDR'] );
+	\$_SERVER['REMOTE_ADDR'] = \$http_x_headers[0];
+}
+EOF
+
+
     if [ ! -e .htaccess ]; then
         cat > "$WORDPRESSPATH/.htaccess" <<-'EOF'
-            # BEGIN WordPress
-            <IfModule mod_rewrite.c>
-            RewriteEngine On
-            RewriteBase /
-            RewriteRule ^index\.php$ - [L]
-            RewriteCond %{REQUEST_FILENAME} !-f
-            RewriteCond %{REQUEST_FILENAME} !-d
-            RewriteRule . /index.php [L]
-            </IfModule>
-            # END WordPress
+# BEGIN WordPress
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+# END WordPress
 EOF
 
         chown  -R --reference="$WORDPRESSPATH/wp-config-sample.php" "$WORDPRESSPATH/.htaccess"
@@ -144,6 +158,7 @@ EOF
     sed -i "s#define( 'WP_HOME'.*#define( 'WP_HOME', ${NEWURL} );#g" ${WORDPRESSPATH}/wp-config.php
     sed -i "s#define( 'WP_SITEURL'.*#define( 'WP_SITEURL', ${NEWURL} );#g" ${WORDPRESSPATH}/wp-config.php
 
+    echo "Finished wordpress setup."
 }
 
 
@@ -187,7 +202,6 @@ function config_server_wp
 
         cat $SERVER_ROOT/conf/httpd_config.conf | grep "virtualhost wordpress" >/dev/null
         if [ $? != 0 ] ; then
-            sed -i -e "s/debugLevel/debugLevel $LOG_DEBUG\n#debugLevel/" "$SERVER_ROOT/conf/httpd_config.conf"
             sed -i -e "s/adminEmails/adminEmails $SERVER_EMAIL\n#adminEmails/" "$SERVER_ROOT/conf/httpd_config.conf"
             sed -i -e "s/debugLevel/debugLevel $OLS_DEBUG_LEVEL\n#debugLevel/" "$SERVER_ROOT/conf/httpd_config.conf"
             sed -i -e "s/maxReqBodySize/maxReqBodySize $OLS_MAX_REQ_BODY_SIZE\n#maxReqBodySize/" "$SERVER_ROOT/conf/httpd_config.conf"
@@ -195,7 +209,9 @@ function config_server_wp
             sed -i -e "s/initTimeout/initTimeout $OLS_INIT_TIMEOUT\n#initTimeout/" "$SERVER_ROOT/conf/httpd_config.conf"
             sed -i -e "s/procHardLimit/procHardLimit $OLS_PROC_HARD_LIMIT\n#procHardLimit/" "$SERVER_ROOT/conf/httpd_config.conf"
             sed -i -e "s/procSoftLimit/procSoftLimit $OLS_PROC_SOFT_LIMIT\n#procSoftLimit/" "$SERVER_ROOT/conf/httpd_config.conf"
-
+            sed -i -e "s/autoloadhtaccess/autoloadhtaccess $AUTOLOADHTACCSES\n#autoloadhtaccess/" "$SERVER_ROOT/conf/httpd_config.conf"
+            sed -i -e "s/LOG_IP_HEADER/$LOG_IP_HEADER/" "$SERVER_ROOT/conf/httpd_config.conf"
+            
             VHOSTCONF=$SERVER_ROOT/conf/vhosts/wordpress/vhconf.conf
 
             cat >> $SERVER_ROOT/conf/httpd_config.conf <<END
@@ -241,12 +257,12 @@ index  {
 
 errorlog $SERVER_ROOT/logs/error.log {
     useServer 1
-    logLevel DEBUG
+    logLevel $LOG_LEVEL
     rollingSize 10M
 }
 
 accesslog $SERVER_ROOT/logs/access.log {
-    logFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-agent}i\"
+    logFormat "$LOG_IP_HEADER %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-agent}i\"
     useServer 0
     rollingSize 10M
     keepDays 30
@@ -258,14 +274,19 @@ context / {
   location                \$VH_ROOT
   allowBrowse             1
   indexFiles              index.php
-  extraHeaders            $EXTRA_HEADER
+  extraHeaders            <<<END_extraHeaders
 
-  rewrite  {
-    enable                1
-    inherit               1
-    rewriteFile           $WORDPRESSPATH/.htaccess
+Header set Access-Control-Allow-Origin: "*"
 
-  }
+END_extraHeaders
+
+}
+
+rewrite  {
+  enable                1
+  inherit               1
+  rewriteFile           $WORDPRESSPATH/.htaccess
+  autoLoadHtaccess      1
 }
 
 END
@@ -290,7 +311,6 @@ define('WP_ADMIN', true);
 activate_plugin('litespeed-cache/litespeed-cache.php', '', false, false);
 
 END
-    ls -all $SERVER_ROOT/fcgi-bin/
     $SERVER_ROOT/lsphp74/bin/php7.4 $WORDPRESSPATH/activate_cache.php
     rm $WORDPRESSPATH/activate_cache.php
 }

@@ -1,6 +1,6 @@
 FROM ubuntu:20.04
 
-ARG OLS_VERSION=1.6.18-1+focal
+ARG OLS_VERSION=1.6.19-1+focal
 ARG PHP_VERSION=7.4
 ARG LSPHP_VERSION=lsphp74
 ARG WORDPRESS_VERSION=5.6
@@ -107,10 +107,17 @@ ENV PATH=/usr/local/lsws/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/
     OLS_PROC_HARD_LIMIT='500' \
     OLS_PROC_SOFT_LIMIT='500' \
     EXTRA_HEADER='Access-Control-Allow-Origin *' \
-    LOG_DEBUG='0'
+    LOG_LEVEL='error' \
+    LOG_IP_HEADER='%h' \
+    AUTOLOADHTACCSES='1' \
+    REMOTE_ADDR='REMOTE_ADDR'
+
+
+COPY ./command.sh /
+RUN chmod +x /command.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["tail -f /usr/local/lsws/logs/access.log | sed 's/^/[LOG: ]/' & tail -f /usr/local/lsws/logs/error.log | sed 's/^/[ERROR: ]/'"]
+CMD ["/command.sh"]
 
 # [supervisord]
 # nodaemon=true
